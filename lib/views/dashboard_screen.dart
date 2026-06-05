@@ -1,7 +1,10 @@
+import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../models/transaction_model.dart';
+import '../services/api_service.dart';
 import '../viewmodels/transaction_viewmodel.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -12,9 +15,12 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  late final Future<List<Map<String, dynamic>>> _newsFuture;
+
   @override
   void initState() {
     super.initState();
+    _newsFuture = ApiService().getFinancialNews();
     Future.microtask(() =>
       ref.read(transactionProvider.notifier).loadTransactions(),
     );
@@ -30,6 +36,199 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     _tituloController.dispose();
     _valorController.dispose();
     super.dispose();
+  }
+
+  void _showNewsDetail(Map<String, dynamic> news) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Notícia financeira'),
+        content: Text(news['headline'] as String),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const double _newsSectionHeight = 160;
+
+  bool _isValidImageUrl(dynamic image) {
+    return image is String && image.isNotEmpty && image.startsWith('http');
+  }
+
+  Widget _buildNewsFallbackBackground() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.blueGrey,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Center(
+        child: Icon(Icons.newspaper, color: Colors.white54, size: 40),
+      ),
+    );
+  }
+
+  Widget _buildNewsBackground(dynamic image) {
+    if (_isValidImageUrl(image)) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.network(
+          image as String,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          errorBuilder: (_, __, ___) => _buildNewsFallbackBackground(),
+        ),
+      );
+    }
+    return _buildNewsFallbackBackground();
+  }
+
+  Widget _buildNewsCard(Map<String, dynamic> item) {
+    final headline = item['headline'] as String;
+
+    return GestureDetector(
+      onTap: () => _showNewsDetail(item),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          height: _newsSectionHeight,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildNewsBackground(item['image']),
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.15),
+                      Colors.black.withValues(alpha: 0.85),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: Text(
+                  headline,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewsSkeleton() {
+    return SizedBox(
+      height: _newsSectionHeight,
+      child: Shimmer.fromColors(
+        baseColor: Colors.grey.shade300,
+        highlightColor: Colors.grey.shade100,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewsError(String message) {
+    return SizedBox(
+      height: _newsSectionHeight,
+      child: Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade400, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                message,
+                style: TextStyle(color: Colors.red.shade400, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _newsFuture = ApiService().getFinancialNews();
+                });
+              },
+              child: const Text('Tentar novamente'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewsSection() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _newsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildNewsSkeleton();
+        }
+
+        if (snapshot.hasError) {
+          return _buildNewsError('Não foi possível carregar as notícias.');
+        }
+
+        final news = snapshot.data ?? [];
+        if (news.isEmpty) {
+          return const SizedBox(
+            height: _newsSectionHeight,
+            child: Center(
+              child: Text(
+                'Nenhuma notícia disponível no momento.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          );
+        }
+
+        return CarouselSlider(
+          options: CarouselOptions(
+            height: _newsSectionHeight,
+            autoPlay: true,
+            enlargeCenterPage: true,
+            viewportFraction: 0.8,
+          ),
+          items: news
+              .map((item) => _buildNewsCard(item))
+              .toList(),
+        );
+      },
+    );
   }
 
   void _showAddTransactionModal() {
@@ -176,6 +375,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             ),
           ),
+          _buildNewsSection(),
           Expanded(
             child: transactions.isEmpty
                 ? const Center(child: Text('Nenhuma transação cadastrada.'))
