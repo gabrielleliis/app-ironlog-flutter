@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.5.1
   sqflite: ^2.3.0
+  path: ^1.9.1
   path_provider: ^2.1.2
   dio: ^5.4.3
   shimmer: ^3.0.0
